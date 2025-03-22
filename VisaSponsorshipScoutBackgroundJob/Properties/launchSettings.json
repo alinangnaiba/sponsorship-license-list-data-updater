@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "VisaSponsorshipScoutBackgroundJob": {
+      "commandName": "Project"
+    },
+    "Container (Dockerfile)": {
+      "commandName": "Docker"
+    }
+  }
+}
