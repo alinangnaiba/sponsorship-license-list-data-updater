@@ -18,7 +18,7 @@ namespace VisaSponsorshipScoutBackgroundJob
             services.AddHttpClient(); //
             var serviceProvider = services.BuildServiceProvider();
             IHttpClientFactory clientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
-            var webScraper = new WebScraper(clientFactory);
+            var webScraper = new Crawler(configuration, clientFactory);
             Console.WriteLine("Hello, World!");
         }
     }

@@ -6,11 +6,15 @@
         public DatabaseSettings DatabaseSettings { get; set; } = new DatabaseSettings();
     }
 
+    internal class CrawlerSettings
+    {
+        public string CrawlUrl { get; set; }
+    }
+
     internal class FileStorageSettings
     {
-        public string CertificateBucket{ get; set; }
-        public string FileName { get; set; }
-        public string OrganisationFileBucket { get; set; }
+        public string Bucket{ get; set; }
+        public string CertificateFilename { get; set; }
     }
 
     internal class DatabaseSettings

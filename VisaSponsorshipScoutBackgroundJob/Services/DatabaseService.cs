@@ -4,11 +4,13 @@ using Raven.Client.ServerWide;
 using VisaSponsorshipScoutBackgroundJob.Infrastructure.Configuration;
 using VisaSponsorshipScoutBackgroundJob.Core.Entities;
 using VisaSponsorshipScoutBackgroundJob.Core;
+using System.Linq.Expressions;
 
 namespace VisaSponsorshipScoutBackgroundJob.Services
 {
     internal interface IDatabaseService
     {
+        Task<ProcessLog?> Get(Expression<Func<ProcessLog, bool>> predicate);
         Task<ProcessLog> GetLatestProcessLogAsync();
         Task<ProcessLog?> GetExistingInProgress();
         Task SaveProcessLogAsync(ProcessLog processLog);
@@ -86,9 +88,13 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
             }
         }
 
-        internal IDocumentStore GetDocumentStore()
+        public async Task<ProcessLog?> Get(Expression<Func<ProcessLog, bool>> predicate)
         {
-            return _documentStore;
+            return await _documentStore
+                .OpenAsyncSession()
+                .Query<ProcessLog>()
+                .Where(predicate)
+                .FirstOrDefaultAsync();
         }
     }
 }

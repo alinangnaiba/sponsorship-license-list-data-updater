@@ -2,7 +2,7 @@
 {
     public class Organisation
     {
-        public string Id { get; set; } // RavenDB uses a string ID
+        public string Id { get; set; }
         public string Name { get; set; }
         public List<string> TownCities { get; set; }
         public string County { get; set; }

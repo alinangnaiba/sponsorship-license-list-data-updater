@@ -1,27 +1,31 @@
 ﻿using HtmlAgilityPack;
+using Microsoft.Extensions.Configuration;
+using VisaSponsorshipScoutBackgroundJob.Infrastructure.Configuration;
 
 namespace VisaSponsorshipScoutBackgroundJob.Infrastructure.Http
 {
-    internal interface IWebScraper
+    internal interface ICrawler
     {
-        Task<string?> ScrapeAttachmentLinkAsync(string url);
+        Task<string?> ScrapeAttachmentLinkAsync();
     }
 
-    internal class WebScraper : IWebScraper
+    internal class Crawler : ICrawler
     {
         private IHttpClientFactory _clientFactory;
+        private CrawlerSettings _settings;
 
-        internal WebScraper(IHttpClientFactory clientFactory)
+        internal Crawler(IConfiguration configuration, IHttpClientFactory clientFactory)
         {
             _clientFactory = clientFactory;
+            _settings = configuration.GetSection(nameof(CrawlerSettings)).Get<CrawlerSettings>() ?? throw new InvalidOperationException($"{nameof(CrawlerSettings)} not configured.");
         }
 
-        public async Task<string?> ScrapeAttachmentLinkAsync(string url)
+        public async Task<string?> ScrapeAttachmentLinkAsync()
         {
             try
             {
                 HttpClient client = _clientFactory.CreateClient();
-                string html = await client.GetStringAsync(url);
+                string html = await client.GetStringAsync(_settings.CrawlUrl);
 
                 HtmlDocument doc = new HtmlDocument();
                 doc.LoadHtml(html);
@@ -35,7 +39,7 @@ namespace VisaSponsorshipScoutBackgroundJob.Infrastructure.Http
                     return linkNode.GetAttributeValue("href", "");
                 }
 
-                return null; // or throw an exception, or return empty string
+                return null;
             }
             catch (HttpRequestException ex)
             {
