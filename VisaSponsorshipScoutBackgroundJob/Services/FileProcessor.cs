@@ -30,6 +30,8 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
         private const int BatchSize = 5000;
         private const int MaxParallel = 4;
 
+        private ProcessLog ProcessLog { get; set; }
+
         public FileProcessor(IDocumentStore documentStore, IOrganisationFileService fileService, ICrawler webScraper, IFileDownloadClient fileDownloadClient)
         {
             _fileService = fileService;
@@ -41,65 +43,65 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
         public async Task ProcessAsync()
         {
             using IAsyncDocumentSession session = _documentStore.OpenAsyncSession();
-            ProcessLog processLog = await GetExistingOrCreateProcessLog(session);
+            ProcessLog = await GetExistingOrCreateProcessLog(session);
             try
             {
 
-                string? sourceLastUpdateString = await _crawler.ScrapeLastUpdatedDateAsync(processLog);
+                string? sourceLastUpdateString = await _crawler.ScrapeLastUpdatedDateAsync(ProcessLog);
                 if (sourceLastUpdateString is null)
                 {
                     return;
                 }
                 if (!HasUpdateFromSource(sourceLastUpdateString))
                 {
-                    processLog.Status = ProcessStatus.NoUpdate;
+                    ProcessLog.Status = ProcessStatus.NoUpdate;
                     return;
                 }
-                processLog.SourceLastUpdate = DateTime.Parse(sourceLastUpdateString);
+                ProcessLog.SourceLastUpdate = DateTime.Parse(sourceLastUpdateString);
 
-                var newFileContent = await FetchNewFiles(processLog);
+                var newFileContent = await FetchNewFiles();
                 if (newFileContent is null)
                 {
                     return;
                 }
                 if (newFileContent.Length > 0)
                 {
-                    _fileService.UploadOrganisationFile(newFileContent, processLog);
-                    if (processLog.Status == ProcessStatus.Failed)
+                    _fileService.UploadOrganisationFile(newFileContent, ProcessLog);
+                    if (ProcessLog.Status == ProcessStatus.Failed)
                     {
                         return;
                     }
                 }
 
-                await ProcessFileAsync(processLog, newFileContent);
+                await ProcessFileAsync(newFileContent);
             }
             catch (Exception ex)
             {
-                processLog.Status = ProcessStatus.Failed;
-                processLog.ErrorMessage = ex.Message;
+                ProcessLog.Status = ProcessStatus.Failed;
+                ProcessLog.ErrorMessage = ex.Message;
             }
             finally
             {
                 //save process log
-                if (processLog.Status != ProcessStatus.NoUpdate)
+                if (ProcessLog.Status != ProcessStatus.NoUpdate)
                 {
                     await session.SaveChangesAsync();
                 }
             }
         }
 
-        private async Task<byte[]?> FetchNewFiles(ProcessLog InProgressProcessLog)
+        private async Task<byte[]?> FetchNewFiles()
         {
             try
             {
-                string? fileUrl = await _crawler.ScrapeAttachmentLinkAsync(InProgressProcessLog) ?? throw new InvalidOperationException("File link not found.");
+                string? fileUrl = await _crawler.ScrapeAttachmentLinkAsync(ProcessLog) ?? throw new InvalidOperationException("File link not found.");
                 Uri uri = new(fileUrl);
                 string fileName = Path.GetFileName(uri.LocalPath);
 
-                if (InProgressProcessLog.FileName == fileName)
+                if (ProcessLog.FileName == fileName)
                 {
-                    InProgressProcessLog.StartedAt = DateTime.UtcNow;
-                    var contentFromStorage = _fileService.DownloadOrganisationFile(InProgressProcessLog);
+                    ProcessLog.StartedAt = DateTime.UtcNow;
+                    var contentFromStorage = _fileService.DownloadOrganisationFile(ProcessLog);
                     // If the file is in progress, return the content from storage
                     // if file is not in storage, we know we tried to process and upload it but failed
                     // so we should try to download it again
@@ -109,13 +111,13 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
                     }
                 }
 
-                InProgressProcessLog.FileName = fileName;
+                ProcessLog.FileName = fileName;
 
                 byte[]? file = await _fileDownloadClient.DownloadFileAsByteArrayAsync(fileUrl);
                 if (file is null)
                 {
-                    InProgressProcessLog.Status = ProcessStatus.Failed;
-                    InProgressProcessLog.ErrorMessage = $"File download failed - URL: {fileUrl}.";
+                    ProcessLog.Status = ProcessStatus.Failed;
+                    ProcessLog.ErrorMessage = $"File download failed - URL: {fileUrl}.";
                     return null;
                 }
 
@@ -123,8 +125,8 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
             }
             catch (Exception ex)
             {
-                InProgressProcessLog.Status = ProcessStatus.Failed;
-                InProgressProcessLog.ErrorMessage = $"{nameof(FetchNewFiles)}: {ex.Message}";
+                ProcessLog.Status = ProcessStatus.Failed;
+                ProcessLog.ErrorMessage = $"{nameof(FetchNewFiles)}: {ex.Message}";
                 return null;
             }
         }
@@ -249,7 +251,7 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
             return organisations;
         }
 
-        private async Task ProcessFileAsync(ProcessLog processLog, byte[] fileContent)
+        private async Task ProcessFileAsync(byte[] fileContent)
         {
             var stopwatch = new Stopwatch();
             Console.WriteLine("Processing file started...");
@@ -278,13 +280,13 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
                 }
             }
             await Task.WhenAll(tasks);
-            processLog.Status = ProcessStatus.Completed;
-            processLog.FinishedAt = DateTime.UtcNow;
-            processLog.TotalRecordsProcessed = organisationsFromCsv.Count;
-            processLog.AddedRecords = addedRecords;
-            processLog.DeletedRecords = orgsToDeleteCount > 0 ? orgsToDeleteCount : 0;
-            processLog.UpdatedRecords = updatedRecords;
-
+            ProcessLog.Status = ProcessStatus.Completed;
+            ProcessLog.FinishedAt = DateTime.UtcNow;
+            ProcessLog.TotalRecordsProcessed = organisationsFromCsv.Count;
+            ProcessLog.AddedRecords = addedRecords;
+            ProcessLog.DeletedRecords = orgsToDeleteCount > 0 ? orgsToDeleteCount : 0;
+            ProcessLog.UpdatedRecords = updatedRecords;
+            
             await session.SaveChangesAsync();
             stopwatch.Stop();
             Console.WriteLine($"Processing file completed in {stopwatch.Elapsed}");
