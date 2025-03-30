@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using System.Diagnostics;
 using VisaSponsorshipScoutBackgroundJob.Infrastructure.CloudServices;
 using VisaSponsorshipScoutBackgroundJob.Infrastructure.Configuration;
 using VisaSponsorshipScoutBackgroundJob.Infrastructure.Http;
@@ -55,12 +56,13 @@ namespace VisaSponsorshipScoutBackgroundJob
                 })
                 .Build();
 
+            var stopwatch = new Stopwatch();
+            stopwatch.Start();
             try
             {
                 Console.WriteLine("Processing started...");
                 var processor = host.Services.GetRequiredService<IFileProcessor>();
                 await processor.ProcessAsync();
-                Console.WriteLine("Processing completed...");
             }
             catch (Exception ex)
             {
@@ -69,6 +71,8 @@ namespace VisaSponsorshipScoutBackgroundJob
             }
             finally
             {
+                stopwatch.Stop();
+                Console.WriteLine($"Processing completed in {stopwatch.Elapsed}ms");
                 await host.StopAsync();
             }
         }
