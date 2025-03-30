@@ -50,7 +50,7 @@ namespace VisaSponsorshipScoutBackgroundJob
             finally
             {
                 stopwatch.Stop();
-                Console.WriteLine($"Processing completed in {stopwatch.Elapsed}ms");
+                Console.WriteLine($"Processing completed in {stopwatch.Elapsed}");
                 await host.StopAsync();
             }
         }

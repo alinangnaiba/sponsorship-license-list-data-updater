@@ -100,8 +100,7 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
                 {
                     InProgressProcessLog.StartedAt = DateTime.UtcNow;
                     var contentFromStorage = _fileService.DownloadOrganisationFile(InProgressProcessLog);
-                    // If the file is already processed, return the content from storage
-                    // This is to avoid reprocessing the same file
+                    // If the file is in progress, return the content from storage
                     // if file is not in storage, we know we tried to process and upload it but failed
                     // so we should try to download it again
                     if (contentFromStorage is not null)
@@ -151,16 +150,16 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
         {
             IDocumentSession session = _documentStore.OpenSession();
             var lastProcessLog = session.Query<ProcessLog>()
-            .Where(log => log.Status == ProcessStatus.Completed)
-            .OrderByDescending(log => log.FinishedAt)
-            .FirstOrDefault();
+                .Where(log => log.Status == ProcessStatus.Completed)
+                .OrderByDescending(log => log.FinishedAt)
+                .FirstOrDefault();
 
             if (lastProcessLog == null)
             {
                 return true;
             }
 
-            //assume the DateTime from the source is UTC
+            //assume the DateTime from the source is same as the server
             if (DateTime.TryParse(sourceLastUpdateString, out DateTime sourceLastUpdate))
             {
                 DateTime finishedAtUtc = lastProcessLog.FinishedAt?.ToUniversalTime() ?? DateTime.MinValue.ToUniversalTime();
@@ -237,7 +236,7 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
 
         private async Task<List<Organisation>> GetOrganisationsFromStreamAsync(IAsyncDocumentSession session)
         {
-            List<Organisation> organisations = new();
+            List<Organisation> organisations = [];
             var query = session.Query<Organisation>();
             await using (var stream = await session.Advanced.StreamAsync(query))
             {
