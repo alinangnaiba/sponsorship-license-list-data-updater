@@ -5,11 +5,11 @@
         Task<byte[]?> DownloadFileAsByteArrayAsync(string fileUrl);
     }
 
-    internal class FileDownloadClient : IFileDownloadClient
+    internal class OrganisationFileDownloadClient : IFileDownloadClient
     {
         private readonly IHttpClientFactory _clientFactory;
 
-        public FileDownloadClient(IHttpClientFactory clientFactory)
+        public OrganisationFileDownloadClient(IHttpClientFactory clientFactory)
         {
             _clientFactory = clientFactory;
         }

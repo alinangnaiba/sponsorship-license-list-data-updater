@@ -1,12 +1,15 @@
 ﻿using HtmlAgilityPack;
 using Microsoft.Extensions.Configuration;
+using VisaSponsorshipScoutBackgroundJob.Core;
+using VisaSponsorshipScoutBackgroundJob.Core.Entities;
 using VisaSponsorshipScoutBackgroundJob.Infrastructure.Configuration;
 
 namespace VisaSponsorshipScoutBackgroundJob.Infrastructure.Http
 {
     internal interface ICrawler
     {
-        Task<string?> ScrapeAttachmentLinkAsync();
+        Task<string?> ScrapeAttachmentLinkAsync(ProcessLog processLog);
+        Task<string?> ScrapeLastUpdatedDateAsync(ProcessLog processLog);
     }
 
     internal class Crawler : ICrawler
@@ -14,13 +17,13 @@ namespace VisaSponsorshipScoutBackgroundJob.Infrastructure.Http
         private IHttpClientFactory _clientFactory;
         private CrawlerSettings _settings;
 
-        internal Crawler(IConfiguration configuration, IHttpClientFactory clientFactory)
+        public Crawler(IConfiguration configuration, IHttpClientFactory clientFactory)
         {
             _clientFactory = clientFactory;
             _settings = configuration.GetSection(nameof(CrawlerSettings)).Get<CrawlerSettings>() ?? throw new InvalidOperationException($"{nameof(CrawlerSettings)} not configured.");
         }
 
-        public async Task<string?> ScrapeAttachmentLinkAsync()
+        public async Task<string?> ScrapeAttachmentLinkAsync(ProcessLog processLog)
         {
             try
             {
@@ -41,14 +44,37 @@ namespace VisaSponsorshipScoutBackgroundJob.Infrastructure.Http
 
                 return null;
             }
-            catch (HttpRequestException ex)
+            catch (Exception ex)
             {
-                Console.WriteLine($"Error fetching URL: {ex.Message}");
+                processLog.ErrorMessage = ex.Message;
+                processLog.Status = ProcessStatus.Failed;
                 return null;
+            }
+        }
+
+        public async Task<string?> ScrapeLastUpdatedDateAsync(ProcessLog processLog)
+        {
+            try
+            {
+                HttpClient client = _clientFactory.CreateClient();
+                string html = await client.GetStringAsync(_settings.CrawlUrl);
+                HtmlDocument doc = new HtmlDocument();
+                doc.LoadHtml(html);
+                var dateNode = doc.DocumentNode.Descendants("time")
+                    .Where(node => node.GetAttributeValue("class", "").Contains("gem-c-published-dates__change-date timestamp"))
+                    .FirstOrDefault();
+                if (dateNode == null)
+                {
+                    processLog.Status = ProcessStatus.Failed;
+                    processLog.ErrorMessage = "Date node not found.";
+                    return null;
+                }
+                return dateNode.Attributes["datetime"].Value; ;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"An unexpected error occurred: {ex.Message}");
+                processLog.ErrorMessage = ex.Message;
+                processLog.Status = ProcessStatus.Failed;
                 return null;
             }
         }
