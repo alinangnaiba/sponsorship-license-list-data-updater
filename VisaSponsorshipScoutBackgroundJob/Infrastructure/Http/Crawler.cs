@@ -6,13 +6,13 @@ using VisaSponsorshipScoutBackgroundJob.Infrastructure.Configuration;
 
 namespace VisaSponsorshipScoutBackgroundJob.Infrastructure.Http
 {
-    internal interface ICrawler
+    public interface ICrawler
     {
         Task<string?> ScrapeAttachmentLinkAsync(ProcessLog processLog);
         Task<string?> ScrapeLastUpdatedDateAsync(ProcessLog processLog);
     }
 
-    internal class Crawler : ICrawler
+    public class Crawler : ICrawler
     {
         private IHttpClientFactory _clientFactory;
         private CrawlerSettings _settings;

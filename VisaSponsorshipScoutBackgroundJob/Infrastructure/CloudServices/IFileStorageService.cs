@@ -1,6 +1,6 @@
 ﻿namespace VisaSponsorshipScoutBackgroundJob.Infrastructure.CloudServices
 {
-    internal interface IFileStorageService
+    public interface IFileStorageService
     {
         bool FileExists(string bucket, string filename);
         byte[]? Download(string bucket, string filename);

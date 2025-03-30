@@ -15,12 +15,12 @@ using VisaSponsorshipScoutBackgroundJob.Infrastructure.Http;
 
 namespace VisaSponsorshipScoutBackgroundJob.Services
 {
-    internal interface IFileProcessor
+    public interface IFileProcessor
     {
         Task ProcessAsync();
     }
 
-    internal class FileProcessor : IFileProcessor
+    public class FileProcessor : IFileProcessor
     {
         private readonly ICrawler _crawler;
         private readonly IDocumentStore _documentStore;

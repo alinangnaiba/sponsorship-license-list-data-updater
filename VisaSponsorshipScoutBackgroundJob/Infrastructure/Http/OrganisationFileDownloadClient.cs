@@ -1,11 +1,11 @@
 ﻿namespace VisaSponsorshipScoutBackgroundJob.Infrastructure.Http
 {
-    internal interface IFileDownloadClient
+    public interface IFileDownloadClient
     {
         Task<byte[]?> DownloadFileAsByteArrayAsync(string fileUrl);
     }
 
-    internal class OrganisationFileDownloadClient : IFileDownloadClient
+    public class OrganisationFileDownloadClient : IFileDownloadClient
     {
         private readonly IHttpClientFactory _clientFactory;
 

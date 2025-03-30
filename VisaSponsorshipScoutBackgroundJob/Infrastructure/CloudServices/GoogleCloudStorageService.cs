@@ -3,7 +3,7 @@ using Google.Cloud.Storage.V1;
 
 namespace VisaSponsorshipScoutBackgroundJob.Infrastructure.CloudServices
 {
-    internal class GoogleCloudStorageService : IFileStorageService
+    public class GoogleCloudStorageService : IFileStorageService
     {
         private const string ContentType = "application/octet-stream";
 
