@@ -5,6 +5,7 @@ using Raven.Client.Documents.BulkInsert;
 using Raven.Client.Documents.Commands.Batches;
 using Raven.Client.Documents.Session;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Globalization;
 using VisaSponsorshipScoutBackgroundJob.Core;
 using VisaSponsorshipScoutBackgroundJob.Core.Entities;
@@ -251,6 +252,9 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
 
         private async Task ProcessFileAsync(ProcessLog processLog, byte[] fileContent)
         {
+            var stopwatch = new Stopwatch();
+            Console.WriteLine("Processing file started...");
+            stopwatch.Start();
             using IAsyncDocumentSession session = _documentStore.OpenAsyncSession();
             SemaphoreSlim semaphore = new(MaxParallel);
             int addedRecords = 0;
@@ -283,6 +287,8 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
             processLog.UpdatedRecords = updatedRecords;
 
             await session.SaveChangesAsync();
+            stopwatch.Stop();
+            Console.WriteLine($"Processing file completed in {stopwatch.Elapsed}");
         }
 
         private static void SendDeleteOrganisationCommand(List<Organisation> existingOrgs, List<Organisation> organisationsFromCsv, IAsyncDocumentSession session, out int orgsToDeleteCount)

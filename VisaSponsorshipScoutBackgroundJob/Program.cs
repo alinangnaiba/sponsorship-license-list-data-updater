@@ -11,28 +11,6 @@ namespace VisaSponsorshipScoutBackgroundJob
 {
     internal class Program
     {
-        //static void Main(string[] args)
-        //{
-        //    IConfiguration configuration = new ConfigurationBuilder()
-        //    .SetBasePath(AppDomain.CurrentDomain.BaseDirectory) // Set base path
-        //    .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true) // Load appsettings.json
-        //    .AddEnvironmentVariables() // Load environment variables
-        //    .Build();
-        //    var services = new ServiceCollection();
-        //    services.AddHttpClient(); //
-        //    services.AddSingleton(configuration);
-        //    services.AddScoped<ICrawler, Crawler>();
-        //    services.AddScoped<IFileDownloadClient, OrganisationFileDownloadClient>();
-        //    services.AddScoped<IFileStorageService, GoogleCloudStorageService>();
-        //    services.AddScoped<IFileService, FileService>();
-        //    services.AddScoped<IFileProcessor, FileProcessor>();
-        //    services.ConfigureDatabase(configuration);
-
-        //    var serviceProvider = services.BuildServiceProvider();
-
-        //    var processor = serviceProvider.GetRequiredService<IFileProcessor>();
-        //    processor.ProcessAsync().Wait();
-        //}
         static async Task Main(string[] args)
         {
             var host = Host.CreateDefaultBuilder(args)
