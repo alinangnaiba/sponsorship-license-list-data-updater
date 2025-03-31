@@ -24,18 +24,18 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
     {
         private readonly ICrawler _crawler;
         private readonly IDocumentStore _documentStore;
-        private readonly IFileDownloadClient _fileDownloadClient;
         private readonly IOrganisationFileService _fileService;
 
         private const int BatchSize = 5000;
         private const int MaxParallel = 4;
 
+        private List<Organisation> ExistingOrganisations { get; set; } = [];
+        private byte[]? FileContent { get; set; } = null;
         private ProcessLog ProcessLog { get; set; }
 
-        public FileProcessor(IDocumentStore documentStore, IOrganisationFileService fileService, ICrawler webScraper, IFileDownloadClient fileDownloadClient)
+        public FileProcessor(IDocumentStore documentStore, IOrganisationFileService fileService, ICrawler webScraper)
         {
             _fileService = fileService;
-            _fileDownloadClient = fileDownloadClient;
             _crawler = webScraper;
             _documentStore = documentStore;
         }
@@ -58,27 +58,31 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
                     return;
                 }
                 ProcessLog.SourceLastUpdate = DateTime.Parse(sourceLastUpdateString);
+                await Task.WhenAll(
+                    FetchContentFromSourceOrStorageAsync(),
+                    LoadExistingOrganisationsAsync(session)
+                    );
 
-                var newFileContent = await FetchNewFiles();
-                if (newFileContent is null)
+                if (FileContent is null)
                 {
                     return;
                 }
-                if (newFileContent.Length > 0)
+
+                if (FileContent.Length > 0)
                 {
-                    _fileService.UploadOrganisationFile(newFileContent, ProcessLog);
+                    _fileService.UploadToStorage(FileContent, ProcessLog);
                     if (ProcessLog.Status == ProcessStatus.Failed)
                     {
                         return;
                     }
                 }
 
-                await ProcessFileAsync(newFileContent);
+                await ProcessFileContentAsync();
             }
             catch (Exception ex)
             {
                 ProcessLog.Status = ProcessStatus.Failed;
-                ProcessLog.ErrorMessage = ex.Message;
+                ProcessLog.Errors.Add(new(ex.Message, nameof(ProcessAsync), ex.StackTrace));
             }
             finally
             {
@@ -90,7 +94,7 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
             }
         }
 
-        private async Task<byte[]?> FetchNewFiles()
+        private async Task FetchContentFromSourceOrStorageAsync()
         {
             try
             {
@@ -98,36 +102,29 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
                 Uri uri = new(fileUrl);
                 string fileName = Path.GetFileName(uri.LocalPath);
 
+                // FileName should be empty for new process log. Otherwise, it's an existing process that's not completed successfully.
+                // Process it again and we should check for the content from storage and download it.
                 if (ProcessLog.FileName == fileName)
                 {
                     ProcessLog.StartedAt = DateTime.UtcNow;
-                    var contentFromStorage = _fileService.DownloadOrganisationFile(ProcessLog);
-                    // If the file is in progress, return the content from storage
-                    // if file is not in storage, we know we tried to process and upload it but failed
-                    // so we should try to download it again
+                    var contentFromStorage = _fileService.DownloadFromStorage(ProcessLog);
                     if (contentFromStorage is not null)
                     {
-                        return contentFromStorage;
+                        FileContent = contentFromStorage;
+                        return;
                     }
                 }
 
                 ProcessLog.FileName = fileName;
+                FileContent = await _fileService.DownloadFromSourceAsync(fileUrl, ProcessLog);
 
-                byte[]? file = await _fileDownloadClient.DownloadFileAsByteArrayAsync(fileUrl);
-                if (file is null)
-                {
-                    ProcessLog.Status = ProcessStatus.Failed;
-                    ProcessLog.ErrorMessage = $"File download failed - URL: {fileUrl}.";
-                    return null;
-                }
-
-                return file;
+                return;
             }
             catch (Exception ex)
             {
                 ProcessLog.Status = ProcessStatus.Failed;
-                ProcessLog.ErrorMessage = $"{nameof(FetchNewFiles)}: {ex.Message}";
-                return null;
+                ProcessLog.Errors.Add(new(ex.Message, nameof(FetchContentFromSourceOrStorageAsync), ex.StackTrace));
+                return;
             }
         }
 
@@ -189,6 +186,17 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
             }
         }
 
+        private async Task LoadExistingOrganisationsAsync(IAsyncDocumentSession session)
+        {
+            var query = session.Query<Organisation>();
+            await using var stream = await session.Advanced.StreamAsync(query);
+            while (await stream.MoveNextAsync())
+            {
+                var entity = stream.Current.Document;
+                ExistingOrganisations.Add(entity);
+            }
+        }
+
         private static bool NeedsUpdate(Organisation org, Organisation existingOrg)
         {
             return org.County != existingOrg.County
@@ -236,23 +244,14 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
             }
         }
 
-        private async Task<List<Organisation>> GetOrganisationsFromStreamAsync(IAsyncDocumentSession session)
+        private async Task ProcessFileContentAsync()
         {
-            List<Organisation> organisations = [];
-            var query = session.Query<Organisation>();
-            await using (var stream = await session.Advanced.StreamAsync(query))
+            if (FileContent is null)
             {
-                while (await stream.MoveNextAsync())
-                {
-                    var entity = stream.Current.Document;
-                    organisations.Add(entity);
-                }
+                ProcessLog.Status = ProcessStatus.Failed;
+                ProcessLog.Errors.Add(new("File content is null."));
+                return;
             }
-            return organisations;
-        }
-
-        private async Task ProcessFileAsync(byte[] fileContent)
-        {
             var stopwatch = new Stopwatch();
             Console.WriteLine("Processing file started...");
             stopwatch.Start();
@@ -262,12 +261,11 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
             int updatedRecords = 0;
             ConcurrentQueue<Organisation> organisationQueue = new();
             List<Organisation> organisationsFromCsv = [];
-            ReadFile(fileContent, organisationsFromCsv);
-            var existingOrgs = await GetOrganisationsFromStreamAsync(session);
-            int orgsToDeleteCount = 0;
-            SendDeleteOrganisationCommand(existingOrgs, organisationsFromCsv, session, out orgsToDeleteCount);
+            ReadFile(FileContent, organisationsFromCsv);
 
-            var existingOrgDictionary = existingOrgs.ToConcurrentDictionary(org => org.Name);
+            SendDeleteOrganisationCommand(ExistingOrganisations, organisationsFromCsv, session, out int orgsToDeleteCount);
+
+            var existingOrgDictionary = ExistingOrganisations.ToConcurrentDictionary(org => org.Name);
             var readTask = Task.Run(() => PopulateQueue(organisationsFromCsv, existingOrgDictionary, organisationQueue, () => Interlocked.Increment(ref updatedRecords)));
             List<Task> tasks = [];
 

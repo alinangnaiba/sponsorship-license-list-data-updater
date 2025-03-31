@@ -3,29 +3,55 @@ using VisaSponsorshipScoutBackgroundJob.Core;
 using VisaSponsorshipScoutBackgroundJob.Core.Entities;
 using VisaSponsorshipScoutBackgroundJob.Infrastructure.CloudServices;
 using VisaSponsorshipScoutBackgroundJob.Infrastructure.Configuration;
+using VisaSponsorshipScoutBackgroundJob.Infrastructure.Http;
 
 namespace VisaSponsorshipScoutBackgroundJob.Services
 {
     public interface IOrganisationFileService
     {
-        byte[]? DownloadOrganisationFile(ProcessLog processLog);
-        void UploadOrganisationFile(byte[] contents, ProcessLog filename);
+        Task<byte[]?> DownloadFromSourceAsync(string url, ProcessLog processLog);
+        byte[]? DownloadFromStorage(ProcessLog processLog);
+        void UploadToStorage(byte[] contents, ProcessLog filename);
     }
 
     public class OrganisationFileService : IOrganisationFileService
     {
-        private readonly FileStorageSettings _settings;
+        private readonly IFileDownloadClient _fileDownloadClient;
         private readonly IFileStorageService _fileStorageService;
+        private readonly FileStorageSettings _settings;
+
         private const string OrganisationFileFolder = "org-files";
 
-        public OrganisationFileService(IConfiguration configuration, IFileStorageService fileStorageService)
+        public OrganisationFileService(IConfiguration configuration, IFileStorageService fileStorageService, IFileDownloadClient fileDownloadClient )
         {
+            _fileDownloadClient = fileDownloadClient;
             var fileStorageConfig = configuration.GetSection(nameof(FileStorageSettings));
             _fileStorageService = fileStorageService;
             _settings = fileStorageConfig.Get<FileStorageSettings>() ?? throw new ArgumentNullException(nameof(fileStorageConfig));
         }
 
-        public byte[]? DownloadOrganisationFile(ProcessLog processLog)
+        public async Task<byte[]?> DownloadFromSourceAsync(string url, ProcessLog processLog)
+        {
+            try
+            {
+                byte[]? content = await _fileDownloadClient.DownloadFileAsByteArrayAsync(url);
+                if (content is null)
+                {
+                    processLog.Status = ProcessStatus.Failed;
+                    processLog.Errors.Add(new($"File download failed - URL: {url}."));
+                    return null;
+                }
+                return content;
+            }
+            catch (Exception ex)
+            {
+                processLog.Status = ProcessStatus.Failed;
+                processLog.Errors.Add(new(ex.Message, nameof(DownloadFromSourceAsync), ex.StackTrace));
+                return null;
+            }
+        }
+
+        public byte[]? DownloadFromStorage(ProcessLog processLog)
         {
             try
             {
@@ -33,13 +59,13 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
             }
             catch (Exception ex)
             {
-                processLog.ErrorMessage = ex.Message;
+                processLog.Errors.Add(new(ex.Message, nameof(DownloadFromStorage), ex.StackTrace));
                 processLog.Status = ProcessStatus.Failed;
                 return null;
             }
         }
 
-        public void UploadOrganisationFile(byte[] contents, ProcessLog processLog)
+        public void UploadToStorage(byte[] contents, ProcessLog processLog)
         {
             try
             {
@@ -51,7 +77,7 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
             }
             catch(Exception ex)
             {
-                processLog.ErrorMessage = ex.Message;
+                processLog.Errors.Add(new(ex.Message, nameof(UploadToStorage), ex.StackTrace));
                 processLog.Status = ProcessStatus.Failed;                
             }
         }

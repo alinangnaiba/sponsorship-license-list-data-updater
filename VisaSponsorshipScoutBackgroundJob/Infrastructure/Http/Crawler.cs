@@ -41,12 +41,14 @@ namespace VisaSponsorshipScoutBackgroundJob.Infrastructure.Http
                 {
                     return linkNode.GetAttributeValue("href", "");
                 }
+                processLog.Status = ProcessStatus.Failed;
+                processLog.Errors.Add(new("Link node not found."));
 
                 return null;
             }
             catch (Exception ex)
             {
-                processLog.ErrorMessage = ex.Message;
+                processLog.Errors.Add(new (ex.Message, nameof(ScrapeAttachmentLinkAsync), ex.StackTrace));
                 processLog.Status = ProcessStatus.Failed;
                 return null;
             }
@@ -66,14 +68,14 @@ namespace VisaSponsorshipScoutBackgroundJob.Infrastructure.Http
                 if (dateNode == null)
                 {
                     processLog.Status = ProcessStatus.Failed;
-                    processLog.ErrorMessage = "Date node not found.";
+                    processLog.Errors.Add(new ("Date node not found."));
                     return null;
                 }
                 return dateNode.Attributes["datetime"].Value; ;
             }
             catch (Exception ex)
             {
-                processLog.ErrorMessage = ex.Message;
+                processLog.Errors.Add(new (ex.Message, nameof(ScrapeLastUpdatedDateAsync), ex.StackTrace));
                 processLog.Status = ProcessStatus.Failed;
                 return null;
             }

@@ -5,7 +5,8 @@
         public string Id { get; set; }
         public int AddedRecords { get; set; }
         public int DeletedRecords { get; set; }
-        public  string ErrorMessage { get; set; }
+        public List<ProcessLogError> Errors { get; set; } = new();
+        //public  string ErrorMessage { get; set; }
         public string FileName { get; set; }
         public DateTime? FinishedAt { get; set; }
         public DateTime? SourceLastUpdate { get; set; }
@@ -14,4 +15,6 @@
         public int TotalRecordsProcessed { get; set; }
         public int UpdatedRecords { get; set; }
     }
+
+    public record ProcessLogError(string Message, string? Method = null, string? Trace = null);
 }
