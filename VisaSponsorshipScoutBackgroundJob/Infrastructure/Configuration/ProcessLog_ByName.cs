@@ -9,10 +9,10 @@ namespace VisaSponsorshipScoutBackgroundJob.Infrastructure.Configuration
         {
             Map = processLog => from log in processLog
                                 select new
-                                   {
-                                       log.Status,
-                                       log.FileName
-                                   };
+                                {
+                                    log.Status,
+                                    log.FileName
+                                };
 
             Indexes.Add(x => x.Status, FieldIndexing.Exact);
             Indexes.Add(x => x.FileName, FieldIndexing.Search);

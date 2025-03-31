@@ -9,6 +9,7 @@ namespace VisaSponsorshipScoutBackgroundJob.Infrastructure.Http
     public interface ICrawler
     {
         Task<string?> ScrapeAttachmentLinkAsync(ProcessLog processLog);
+
         Task<string?> ScrapeLastUpdatedDateAsync(ProcessLog processLog);
     }
 
@@ -48,7 +49,7 @@ namespace VisaSponsorshipScoutBackgroundJob.Infrastructure.Http
             }
             catch (Exception ex)
             {
-                processLog.Errors.Add(new (ex.Message, nameof(ScrapeAttachmentLinkAsync), ex.StackTrace));
+                processLog.Errors.Add(new(ex.Message, nameof(ScrapeAttachmentLinkAsync), ex.StackTrace));
                 processLog.Status = ProcessStatus.Failed;
                 return null;
             }
@@ -68,14 +69,14 @@ namespace VisaSponsorshipScoutBackgroundJob.Infrastructure.Http
                 if (dateNode == null)
                 {
                     processLog.Status = ProcessStatus.Failed;
-                    processLog.Errors.Add(new ("Date node not found."));
+                    processLog.Errors.Add(new("Date node not found."));
                     return null;
                 }
                 return dateNode.Attributes["datetime"].Value; ;
             }
             catch (Exception ex)
             {
-                processLog.Errors.Add(new (ex.Message, nameof(ScrapeLastUpdatedDateAsync), ex.StackTrace));
+                processLog.Errors.Add(new(ex.Message, nameof(ScrapeLastUpdatedDateAsync), ex.StackTrace));
                 processLog.Status = ProcessStatus.Failed;
                 return null;
             }

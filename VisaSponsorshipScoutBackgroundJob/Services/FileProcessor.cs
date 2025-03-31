@@ -22,16 +22,12 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
 
     public class FileProcessor : IFileProcessor
     {
-        private readonly ICrawler _crawler;
-        private readonly IDocumentStore _documentStore;
-        private readonly IOrganisationFileService _fileService;
-
         private const int BatchSize = 5000;
         private const int MaxParallel = 4;
 
-        private List<Organisation> ExistingOrganisations { get; set; } = [];
-        private byte[]? FileContent { get; set; } = null;
-        private ProcessLog ProcessLog { get; set; }
+        private readonly ICrawler _crawler;
+        private readonly IDocumentStore _documentStore;
+        private readonly IOrganisationFileService _fileService;
 
         public FileProcessor(IDocumentStore documentStore, IOrganisationFileService fileService, ICrawler webScraper)
         {
@@ -40,13 +36,18 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
             _documentStore = documentStore;
         }
 
+        private List<Organisation> ExistingOrganisations { get; set; } = [];
+
+        private byte[]? FileContent { get; set; } = null;
+
+        private ProcessLog ProcessLog { get; set; }
+
         public async Task ProcessAsync()
         {
             using IAsyncDocumentSession session = _documentStore.OpenAsyncSession();
             ProcessLog = await GetExistingOrCreateProcessLog(session);
             try
             {
-
                 string? sourceLastUpdateString = await _crawler.ScrapeLastUpdatedDateAsync(ProcessLog);
                 if (sourceLastUpdateString is null)
                 {
@@ -94,6 +95,95 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
             }
         }
 
+        private static async Task<ProcessLog> GetExistingOrCreateProcessLog(IAsyncDocumentSession session)
+        {
+            var processLog = await session.Query<ProcessLog>()
+                .Where(log => log.Status == ProcessStatus.InProgress)
+                .FirstOrDefaultAsync() ??
+                new()
+                {
+                    StartedAt = DateTime.UtcNow,
+                    Status = ProcessStatus.InProgress
+                };
+            if (string.IsNullOrEmpty(processLog.Id))
+            {
+                await session.StoreAsync(processLog);
+            }
+            return processLog;
+        }
+
+        private static bool NeedsUpdate(Organisation org, Organisation existingOrg)
+        {
+            return org.County != existingOrg.County
+                || !org.TownCities.IsEqualTo(existingOrg.TownCities)
+                || !org.TypeAndRatings.IsEqualTo(existingOrg.TypeAndRatings)
+                || !org.Routes.IsEqualTo(existingOrg.Routes);
+        }
+
+        private static void PopulateQueue(List<Organisation> organisationsFromCsv, ConcurrentDictionary<string, Organisation> existingDictionary, ConcurrentQueue<Organisation> organisationQueue, Func<int> updatedRecords)
+        {
+            foreach (var org in organisationsFromCsv)
+            {
+                if (!existingDictionary.TryGetValue(org.Name, out Organisation? existingOrg))
+                {
+                    organisationQueue.Enqueue(org);
+                }
+                else if (NeedsUpdate(org, existingOrg))
+                {
+                    existingOrg.TownCities = org.TownCities;
+                    existingOrg.County = org.County.Trim();
+                    existingOrg.TypeAndRatings = org.TypeAndRatings;
+                    existingOrg.Routes = org.Routes;
+                    updatedRecords();
+                }
+            }
+        }
+
+        private static void ReadFile(byte[] fileContent, List<Organisation> organisations)
+        {
+            var config = new CsvConfiguration(CultureInfo.InvariantCulture)
+            {
+                Delimiter = ",",
+                HasHeaderRecord = true,
+                TrimOptions = TrimOptions.Trim,
+                BadDataFound = null,
+                HeaderValidated = null,
+                MissingFieldFound = null
+            };
+            using var reader = new StreamReader(new MemoryStream(fileContent));
+            using var csv = new CsvReader(reader, config);
+            csv.Context.RegisterClassMap<OrganisationMap>();
+            var models = new List<OrganisationModel>();
+            while (csv.Read())
+            {
+                models.Add(csv.GetRecord<OrganisationModel>());
+            }
+
+            organisations.AddRange(models
+                .GroupBy(org => org.Name.Trim())
+                .Select(group => new Organisation
+                {
+                    Name = group.Key.Trim(),
+                    TownCities = group.Select(o => o.TownCity.Trim()).Distinct().ToList(),
+                    County = group.First().County.Trim(),
+                    TypeAndRatings = group.Select(o => o.TypeAndRating.Trim()).Distinct().ToList(),
+                    Routes = group.Select(o => o.Route.Trim()).Distinct().ToList()
+                })
+                .ToList());
+        }
+
+        private static void SendDeleteOrganisationCommand(List<Organisation> existingOrgs, List<Organisation> organisationsFromCsv, IAsyncDocumentSession session, out int orgsToDeleteCount)
+        {
+            List<string> orgNamesToBeDeleted = existingOrgs.Select(org => org.Name).Except(organisationsFromCsv.Select(org => org.Name)).ToList();
+            List<Organisation> orgsToBeDeleted = existingOrgs.Where(org => orgNamesToBeDeleted.Contains(org.Name)).ToList();
+            orgsToDeleteCount = orgsToBeDeleted.Count;
+            foreach (var org in orgsToBeDeleted)
+            {
+                session.Advanced.Defer(new DeleteCommandData(org.Id, null));
+            }
+            existingOrgs.RemoveAll(org => orgNamesToBeDeleted.Contains(org.Name));
+        }
+
         private async Task FetchContentFromSourceOrStorageAsync()
         {
             try
@@ -102,8 +192,9 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
                 Uri uri = new(fileUrl);
                 string fileName = Path.GetFileName(uri.LocalPath);
 
-                // FileName should be empty for new process log. Otherwise, it's an existing process that's not completed successfully.
-                // Process it again and we should check for the content from storage and download it.
+                // FileName should be empty for new process log. Otherwise, it's an existing process
+                // that's not completed successfully. Process it again and we should check for the
+                // content from storage and download it.
                 if (ProcessLog.FileName == fileName)
                 {
                     ProcessLog.StartedAt = DateTime.UtcNow;
@@ -126,23 +217,6 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
                 ProcessLog.Errors.Add(new(ex.Message, nameof(FetchContentFromSourceOrStorageAsync), ex.StackTrace));
                 return;
             }
-        }
-
-        private async static Task<ProcessLog> GetExistingOrCreateProcessLog(IAsyncDocumentSession session)
-        {
-            var processLog = await session.Query<ProcessLog>()
-                .Where(log => log.Status == ProcessStatus.InProgress)
-                .FirstOrDefaultAsync() ??
-                new()
-                {
-                    StartedAt = DateTime.UtcNow,
-                    Status = ProcessStatus.InProgress
-                };
-            if (string.IsNullOrEmpty(processLog.Id))
-            {
-                await session.StoreAsync(processLog);
-            }
-            return processLog;
         }
 
         private bool HasUpdateFromSource(string? sourceLastUpdateString)
@@ -194,33 +268,6 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
             {
                 var entity = stream.Current.Document;
                 ExistingOrganisations.Add(entity);
-            }
-        }
-
-        private static bool NeedsUpdate(Organisation org, Organisation existingOrg)
-        {
-            return org.County != existingOrg.County
-                || !org.TownCities.IsEqualTo(existingOrg.TownCities)
-                || !org.TypeAndRatings.IsEqualTo(existingOrg.TypeAndRatings)
-                || !org.Routes.IsEqualTo(existingOrg.Routes);
-        }
-
-        private static void PopulateQueue(List<Organisation> organisationsFromCsv, ConcurrentDictionary<string, Organisation> existingDictionary, ConcurrentQueue<Organisation> organisationQueue, Func<int> updatedRecords)
-        {
-            foreach (var org in organisationsFromCsv)
-            {
-                if (!existingDictionary.TryGetValue(org.Name, out Organisation? existingOrg))
-                {
-                    organisationQueue.Enqueue(org);
-                }
-                else if (NeedsUpdate(org, existingOrg))
-                {
-                    existingOrg.TownCities = org.TownCities;
-                    existingOrg.County = org.County.Trim();
-                    existingOrg.TypeAndRatings = org.TypeAndRatings;
-                    existingOrg.Routes = org.Routes;
-                    updatedRecords();
-                }
             }
         }
 
@@ -284,55 +331,10 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
             ProcessLog.AddedRecords = addedRecords;
             ProcessLog.DeletedRecords = orgsToDeleteCount > 0 ? orgsToDeleteCount : 0;
             ProcessLog.UpdatedRecords = updatedRecords;
-            
+
             await session.SaveChangesAsync();
             stopwatch.Stop();
             Console.WriteLine($"Processing file completed in {stopwatch.Elapsed}");
-        }
-
-        private static void SendDeleteOrganisationCommand(List<Organisation> existingOrgs, List<Organisation> organisationsFromCsv, IAsyncDocumentSession session, out int orgsToDeleteCount)
-        {
-            List<string> orgNamesToBeDeleted = existingOrgs.Select(org => org.Name).Except(organisationsFromCsv.Select(org => org.Name)).ToList();
-            List<Organisation> orgsToBeDeleted = existingOrgs.Where(org => orgNamesToBeDeleted.Contains(org.Name)).ToList();
-            orgsToDeleteCount = orgsToBeDeleted.Count;
-            foreach (var org in orgsToBeDeleted)
-            {
-                session.Advanced.Defer(new DeleteCommandData(org.Id, null));
-            }
-            existingOrgs.RemoveAll(org => orgNamesToBeDeleted.Contains(org.Name));
-        }
-
-        private static void ReadFile(byte[] fileContent, List<Organisation> organisations)
-        {
-            var config = new CsvConfiguration(CultureInfo.InvariantCulture)
-            {
-                Delimiter = ",",
-                HasHeaderRecord = true,
-                TrimOptions = TrimOptions.Trim,
-                BadDataFound = null,
-                HeaderValidated = null,
-                MissingFieldFound = null
-            };
-            using var reader = new StreamReader(new MemoryStream(fileContent));
-            using var csv = new CsvReader(reader, config);
-            csv.Context.RegisterClassMap<OrganisationMap>();
-            var models = new List<OrganisationModel>();
-            while (csv.Read())
-            {
-                models.Add(csv.GetRecord<OrganisationModel>());
-            }
-
-            organisations.AddRange(models
-                .GroupBy(org => org.Name.Trim() )
-                .Select(group => new Organisation
-                {
-                    Name = group.Key.Trim(),
-                    TownCities = group.Select(o => o.TownCity.Trim()).Distinct().ToList(),
-                    County = group.First().County.Trim(),
-                    TypeAndRatings = group.Select(o => o.TypeAndRating.Trim()).Distinct().ToList(),
-                    Routes = group.Select(o => o.Route.Trim()).Distinct().ToList()
-                })
-                .ToList());
         }
     }
 }
