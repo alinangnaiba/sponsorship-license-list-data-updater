@@ -2,13 +2,12 @@
 {
     public class ProcessLog
     {
-        public string Id { get; set; }
         public int AddedRecords { get; set; }
         public int DeletedRecords { get; set; }
         public List<ProcessLogError> Errors { get; set; } = new();
-        //public  string ErrorMessage { get; set; }
         public string FileName { get; set; }
         public DateTime? FinishedAt { get; set; }
+        public string Id { get; set; }
         public DateTime? SourceLastUpdate { get; set; }
         public DateTime StartedAt { get; set; }
         public string Status { get; set; }

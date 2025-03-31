@@ -10,19 +10,21 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
     public interface IOrganisationFileService
     {
         Task<byte[]?> DownloadFromSourceAsync(string url, ProcessLog processLog);
+
         byte[]? DownloadFromStorage(ProcessLog processLog);
+
         void UploadToStorage(byte[] contents, ProcessLog filename);
     }
 
     public class OrganisationFileService : IOrganisationFileService
     {
+        private const string OrganisationFileFolder = "org-files";
+
         private readonly IFileDownloadClient _fileDownloadClient;
         private readonly IFileStorageService _fileStorageService;
         private readonly FileStorageSettings _settings;
 
-        private const string OrganisationFileFolder = "org-files";
-
-        public OrganisationFileService(IConfiguration configuration, IFileStorageService fileStorageService, IFileDownloadClient fileDownloadClient )
+        public OrganisationFileService(IConfiguration configuration, IFileStorageService fileStorageService, IFileDownloadClient fileDownloadClient)
         {
             _fileDownloadClient = fileDownloadClient;
             var fileStorageConfig = configuration.GetSection(nameof(FileStorageSettings));
@@ -75,10 +77,10 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
                     _fileStorageService.Upload(_settings.Bucket, filename, contents);
                 }
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 processLog.Errors.Add(new(ex.Message, nameof(UploadToStorage), ex.StackTrace));
-                processLog.Status = ProcessStatus.Failed;                
+                processLog.Status = ProcessStatus.Failed;
             }
         }
     }
