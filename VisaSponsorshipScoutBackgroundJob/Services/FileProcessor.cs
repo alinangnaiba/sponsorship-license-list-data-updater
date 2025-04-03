@@ -120,25 +120,6 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
                 || !org.Routes.IsEqualTo(existingOrg.Routes);
         }
 
-        private static void PopulateQueue(List<Organisation> organisationsFromCsv, ConcurrentDictionary<string, Organisation> existingDictionary, ConcurrentQueue<Organisation> organisationQueue, Func<int> updatedRecords)
-        {
-            foreach (var org in organisationsFromCsv)
-            {
-                if (!existingDictionary.TryGetValue(org.Name, out Organisation? existingOrg))
-                {
-                    organisationQueue.Enqueue(org);
-                }
-                else if (NeedsUpdate(org, existingOrg))
-                {
-                    existingOrg.TownCities = org.TownCities;
-                    existingOrg.County = org.County.Trim();
-                    existingOrg.TypeAndRatings = org.TypeAndRatings;
-                    existingOrg.Routes = org.Routes;
-                    updatedRecords();
-                }
-            }
-        }
-
         private static void ReadFile(byte[] fileContent, List<Organisation> organisations)
         {
             var config = new CsvConfiguration(CultureInfo.InvariantCulture)
@@ -172,16 +153,9 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
                 .ToList());
         }
 
-        private static void SendDeleteOrganisationCommand(List<Organisation> existingOrgs, List<Organisation> organisationsFromCsv, IAsyncDocumentSession session, out int orgsToDeleteCount)
+        private RecordDetail CreateRecordDetail(Organisation organisation)
         {
-            List<string> orgNamesToBeDeleted = existingOrgs.Select(org => org.Name).Except(organisationsFromCsv.Select(org => org.Name)).ToList();
-            List<Organisation> orgsToBeDeleted = existingOrgs.Where(org => orgNamesToBeDeleted.Contains(org.Name)).ToList();
-            orgsToDeleteCount = orgsToBeDeleted.Count;
-            foreach (var org in orgsToBeDeleted)
-            {
-                session.Advanced.Defer(new DeleteCommandData(org.Id, null));
-            }
-            existingOrgs.RemoveAll(org => orgNamesToBeDeleted.Contains(org.Name));
+            return new RecordDetail(organisation.Name, organisation.County, organisation.TownCities, organisation.TypeAndRatings, organisation.Routes);
         }
 
         private async Task FetchContentFromSourceOrStorageAsync()
@@ -271,7 +245,26 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
             }
         }
 
-        private async Task ProcessBatchAsync(ConcurrentQueue<Organisation> organisationQueue, SemaphoreSlim semaphore, Func<int> increment)
+        private void PopulateQueue(List<Organisation> organisationsFromCsv, ConcurrentDictionary<string, Organisation> existingDictionary, ConcurrentQueue<Organisation> organisationQueue)
+        {
+            foreach (var org in organisationsFromCsv)
+            {
+                if (!existingDictionary.TryGetValue(org.Name, out Organisation? existingOrg))
+                {
+                    organisationQueue.Enqueue(org);
+                }
+                else if (NeedsUpdate(org, existingOrg))
+                {
+                    ProcessLog.UpdatedRecords.UpdateRecordDetails.Add(new UpdateRecordDetail(CreateRecordDetail(existingOrg), CreateRecordDetail(org)));
+                    existingOrg.TownCities = org.TownCities;
+                    existingOrg.County = org.County.Trim();
+                    existingOrg.TypeAndRatings = org.TypeAndRatings;
+                    existingOrg.Routes = org.Routes;
+                }
+            }
+        }
+
+        private async Task ProcessBatchAsync(ConcurrentQueue<Organisation> organisationQueue, SemaphoreSlim semaphore)
         {
             try
             {
@@ -280,9 +273,10 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
                 while (items < BatchSize && organisationQueue.TryDequeue(out var org))
                 {
                     batch.Add(org);
-                    increment();
+                    ProcessLog.AddedRecords.OrganisationNames.Add(org.Name);
                     items++;
                 }
+
                 await InsertAsync(batch);
             }
             finally
@@ -304,8 +298,6 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
             stopwatch.Start();
             using IAsyncDocumentSession session = _documentStore.OpenAsyncSession();
             SemaphoreSlim semaphore = new(MaxParallel);
-            int addedRecords = 0;
-            int updatedRecords = 0;
             ConcurrentQueue<Organisation> organisationQueue = new();
             List<Organisation> organisationsFromCsv = [];
             ReadFile(FileContent, organisationsFromCsv);
@@ -313,7 +305,7 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
             SendDeleteOrganisationCommand(ExistingOrganisations, organisationsFromCsv, session, out int orgsToDeleteCount);
 
             var existingOrgDictionary = ExistingOrganisations.ToConcurrentDictionary(org => org.Name);
-            var readTask = Task.Run(() => PopulateQueue(organisationsFromCsv, existingOrgDictionary, organisationQueue, () => Interlocked.Increment(ref updatedRecords)));
+            var readTask = Task.Run(() => PopulateQueue(organisationsFromCsv, existingOrgDictionary, organisationQueue));
             List<Task> tasks = [];
 
             while (!readTask.IsCompleted || !organisationQueue.IsEmpty)
@@ -321,20 +313,30 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
                 if (organisationQueue.Count >= BatchSize || (readTask.IsCompleted && !organisationQueue.IsEmpty))
                 {
                     await semaphore.WaitAsync();
-                    tasks.Add(ProcessBatchAsync(organisationQueue, semaphore, () => Interlocked.Increment(ref addedRecords)));
+                    tasks.Add(ProcessBatchAsync(organisationQueue, semaphore));
                 }
             }
             await Task.WhenAll(tasks);
             ProcessLog.Status = ProcessStatus.Completed;
             ProcessLog.FinishedAt = DateTime.UtcNow;
             ProcessLog.TotalRecordsProcessed = organisationsFromCsv.Count;
-            ProcessLog.AddedRecords = addedRecords;
-            ProcessLog.DeletedRecords = orgsToDeleteCount > 0 ? orgsToDeleteCount : 0;
-            ProcessLog.UpdatedRecords = updatedRecords;
 
             await session.SaveChangesAsync();
             stopwatch.Stop();
             Console.WriteLine($"Processing file completed in {stopwatch.Elapsed}");
+        }
+
+        private void SendDeleteOrganisationCommand(List<Organisation> existingOrgs, List<Organisation> organisationsFromCsv, IAsyncDocumentSession session, out int orgsToDeleteCount)
+        {
+            List<string> orgNamesToBeDeleted = existingOrgs.Select(org => org.Name).Except(organisationsFromCsv.Select(org => org.Name)).ToList();
+            List<Organisation> orgsToBeDeleted = existingOrgs.Where(org => orgNamesToBeDeleted.Contains(org.Name)).ToList();
+            orgsToDeleteCount = orgsToBeDeleted.Count;
+            foreach (var org in orgsToBeDeleted)
+            {
+                session.Advanced.Defer(new DeleteCommandData(org.Id, null));
+            }
+            existingOrgs.RemoveAll(org => orgNamesToBeDeleted.Contains(org.Name));
+            ProcessLog.DeletedRecords = new DeletedOrganisations(orgNamesToBeDeleted.Count, orgNamesToBeDeleted);
         }
     }
 }
