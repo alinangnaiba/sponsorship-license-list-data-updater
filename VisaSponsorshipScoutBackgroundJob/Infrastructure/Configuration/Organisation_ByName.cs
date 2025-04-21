@@ -3,7 +3,7 @@ using VisaSponsorshipScoutBackgroundJob.Core.Entities;
 
 namespace VisaSponsorshipScoutBackgroundJob.Infrastructure.Configuration
 {
-    internal class Organisation_ByName : AbstractIndexCreationTask<Organisation>
+    public class Organisation_ByName : AbstractIndexCreationTask<Organisation>
     {
         public Organisation_ByName()
         {

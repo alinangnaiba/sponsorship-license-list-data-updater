@@ -3,7 +3,7 @@ using VisaSponsorshipScoutBackgroundJob.Core.Entities;
 
 namespace VisaSponsorshipScoutBackgroundJob.Infrastructure.Configuration
 {
-    internal class ProcessLog_ByName : AbstractIndexCreationTask<ProcessLog>
+    public class ProcessLog_ByName : AbstractIndexCreationTask<ProcessLog>
     {
         public ProcessLog_ByName()
         {

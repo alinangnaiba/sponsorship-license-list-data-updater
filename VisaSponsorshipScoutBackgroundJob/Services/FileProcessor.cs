@@ -20,6 +20,12 @@ namespace VisaSponsorshipScoutBackgroundJob.Services
         Task ProcessAsync();
     }
 
+    //TODO: Add unit tests for this class
+    // Need to refactor the class to make it more testable
+    // and to remove the dependency on the RavenDB document store.
+    // We need to make a new class(Repository?) that will handle the
+    // database operations and inject it into this class.
+    // We need to think about how to handle the RavenDB session.
     public class FileProcessor : IFileProcessor
     {
         private const int BatchSize = 5000;

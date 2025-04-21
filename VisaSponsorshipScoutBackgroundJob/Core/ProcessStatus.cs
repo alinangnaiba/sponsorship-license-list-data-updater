@@ -1,6 +1,6 @@
 ﻿namespace VisaSponsorshipScoutBackgroundJob.Core
 {
-    internal class ProcessStatus
+    public class ProcessStatus
     {
         public const string Completed = "Completed";
         public const string Failed = "Failed";
