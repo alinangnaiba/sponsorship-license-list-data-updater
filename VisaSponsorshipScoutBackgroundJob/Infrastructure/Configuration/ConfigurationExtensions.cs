@@ -8,9 +8,9 @@ using VisaSponsorshipScoutBackgroundJob.Infrastructure.CloudServices;
 
 namespace VisaSponsorshipScoutBackgroundJob.Infrastructure.Configuration
 {
-    internal static class ConfigurationExtensions
+    public static class ConfigurationExtensions
     {
-        internal static IServiceCollection ConfigureDatabase(this IServiceCollection services, IConfiguration configuration)
+        public static IServiceCollection ConfigureDatabase(this IServiceCollection services, IConfiguration configuration)
         {
             var applicationSettings = GetSettings(configuration);
 
