@@ -22,13 +22,12 @@ namespace VisaSponsorshipScoutBackgroundJob
                 })
                 .ConfigureServices((hostingContext, services) =>
                 {
+                    services.ConfigureDatabase(hostingContext.Configuration);
                     services.AddHttpClient();
                     services.AddScoped<ICrawler, Crawler>();
                     services.AddScoped<IFileDownloadClient, OrganisationFileDownloadClient>();
                     services.AddScoped<IFileStorageService, GoogleCloudStorageService>();
                     services.AddScoped<IOrganisationFileService, OrganisationFileService>();
-
-                    services.ConfigureDatabase(hostingContext.Configuration);
 
                     services.AddScoped<IFileProcessor, FileProcessor>();
                 })
