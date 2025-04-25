@@ -4,6 +4,21 @@ namespace VisaSponsorshipScoutBackgroundJob.Core.Extensions
 {
     internal static class CollectionExtensions
     {
+        internal static bool IsEqualTo(this List<string> source, List<string> target)
+        {
+            if (source == null && target == null)
+            {
+                return true;
+            }
+
+            if (source == null || target == null || source.Count != target.Count)
+            {
+                return false;
+            }
+
+            return source.SequenceEqual(target);
+        }
+
         internal static ConcurrentDictionary<TKey, TValue> ToConcurrentDictionary<TSource, TKey, TValue>(this IEnumerable<TSource> source, Func<TSource, TKey> keySelector, Func<TSource, TValue> valueSelector)
         {
             var dictionary = new ConcurrentDictionary<TKey, TValue>();
@@ -18,21 +33,6 @@ namespace VisaSponsorshipScoutBackgroundJob.Core.Extensions
             Func<TSource, TKey> keySelector)
         {
             return source.ToConcurrentDictionary(keySelector, item => item);
-        }
-
-        internal static bool IsEqualTo(this List<string> source, List<string> target)
-        {
-            if (source == null && target == null)
-            {
-                return true;
-            }
-
-            if (source == null || target == null || source.Count != target.Count)
-            {
-                return false;
-            }
-
-            return source.SequenceEqual(target);
         }
     }
 }

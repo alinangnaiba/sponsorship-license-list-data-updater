@@ -1,16 +1,16 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Raven.Client.Documents;
-using Raven.Client.ServerWide.Operations;
 using Raven.Client.ServerWide;
+using Raven.Client.ServerWide.Operations;
 using System.Security.Cryptography.X509Certificates;
 using VisaSponsorshipScoutBackgroundJob.Infrastructure.CloudServices;
 
 namespace VisaSponsorshipScoutBackgroundJob.Infrastructure.Configuration
 {
-    internal static class ConfigurationExtensions
+    public static class ConfigurationExtensions
     {
-        internal static IServiceCollection ConfigureDatabase(this IServiceCollection services, IConfiguration configuration)
+        public static IServiceCollection ConfigureDatabase(this IServiceCollection services, IConfiguration configuration)
         {
             var applicationSettings = GetSettings(configuration);
 
@@ -27,7 +27,7 @@ namespace VisaSponsorshipScoutBackgroundJob.Infrastructure.Configuration
             new ProcessLog_ByName().Execute(store);
 
             services.AddSingleton<IDocumentStore>(store);
-            
+
             return services;
         }
 
@@ -37,7 +37,7 @@ namespace VisaSponsorshipScoutBackgroundJob.Infrastructure.Configuration
             {
                 throw new InvalidOperationException("Database settings are missing");
             }
-            
+
             DocumentStore store = new()
             {
                 Urls = applicationSettings.DatabaseSettings.Urls,
@@ -49,7 +49,7 @@ namespace VisaSponsorshipScoutBackgroundJob.Infrastructure.Configuration
                 var bytes = googleCloudStorageService.Download(applicationSettings.FileStorage.Bucket, $"cert/{applicationSettings.FileStorage.CertificateFilename}") ?? throw new InvalidOperationException("Certificate not found");
                 store.Certificate = X509CertificateLoader.LoadPkcs12(bytes.ToArray(), null);
             }
-                        
+
             store.Initialize();
             EnsureDatabaseExists(store, applicationSettings.DatabaseSettings.Database);
 
