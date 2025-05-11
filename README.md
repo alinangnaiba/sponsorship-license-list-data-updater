@@ -1,4 +1,4 @@
-# Visa Sponsorship Scout Background Job
+# Data updater Background Job
 
 This background job application is designed to automatically fetch, process, and store UK visa sponsorship data from the UK government website.
 
